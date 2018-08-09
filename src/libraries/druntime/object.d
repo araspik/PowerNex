@@ -70,8 +70,14 @@ extern (C) void[] _d_arraycopy(size_t size, void[] from, void[] to) @trusted {
 }
 
 extern (C) void __assert(const char* msg_, const char* file_, int line) @trusted {
+	import rt.text;
+
 	//TODO: stderr.write("assert failed: ", msg, file, "<UNK>", line);
 	write(StdFile.stderr, "assert failed!");
+	string msg = cast(string)msg_[0 .. strlen(msg_)];
+	string file = cast(string)file_[0 .. strlen(file_)];
+	write(StdFile.stderr, msg);
+	write(StdFile.stderr, file);
 
 	while (true) {
 	}
@@ -87,8 +93,10 @@ private extern (C) int _d_run_main(int argc, char** argv, MainFunc mainFunc) {
 	if (argc > args.length)
 		argc = args.length;
 
-	for (int i; i < argc; i++)
-		args[i] = argv[i][0 .. strlen(argv[i])];
+	for (int i; i < argc; i++) {
+		char* cArg = argv[i];
+		args[i] = cArg[0 .. strlen(cArg)];
+	}
 
 	return mainFunc(args[0 .. argc]);
 }
@@ -102,8 +110,7 @@ private extern (C) void _start() {
 		call main;
 		mov RDI, RAX;
 		mov RAX, 0;
-		syscall;
-
-		jmp RAX;
+		//syscall;
+		int 0x80;
 	}
 }

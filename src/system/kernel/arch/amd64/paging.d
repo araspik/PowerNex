@@ -238,6 +238,7 @@ private extern (C) void cpuInstallCR3(PhysAddress addr) @safe;
 public:
 	@disable this();
 	this(PhysAddress pml4Address, bool ownsPML4) {
+		Log.warning("PML4Addr: ", pml4Address, "\townsPML4: ", ownsPML4);
 		_addr = pml4Address;
 		_ownsPML4 = ownsPML4;
 	}
@@ -442,6 +443,8 @@ public:
 	}
 
 	void bind() {
+		if (cast(size_t)(&_addr) & 0xFFF)
+			Log.fatal("addr is invalid");
 		cpuInstallCR3(_addr);
 	}
 
@@ -459,6 +462,47 @@ public:
 		if (page)
 			return page.vmFlags();
 		return VMPageFlags();
+	}
+
+	void makeUserAccessable(VirtAddress vAddr) {
+		const ushort pml4Idx = (vAddr.num >> 39) & 0x1FF;
+		const ushort pml3Idx = (vAddr.num >> 30) & 0x1FF;
+		const ushort pml2Idx = (vAddr.num >> 21) & 0x1FF;
+		const ushort pml1Idx = (vAddr.num >> 12) & 0x1FF;
+
+		PML4* pml4 = _getPML4();
+		PML3* pml3 = _getPML3(pml4Idx);
+		{
+			PML4.TableEntry* pml4Entry = &pml4.entries[pml4Idx];
+			if (!pml4Entry.present)
+				return;
+
+			pml4Entry.user = true;
+			_flush(pml3.VirtAddress);
+		}
+
+		PML2* pml2 = _getPML2(pml4Idx, pml3Idx);
+		{
+			PML3.TableEntry* pml3Entry = &pml3.entries[pml3Idx];
+			if (!pml3Entry.present)
+				return;
+
+			pml3Entry.user = true;
+			_flush(pml2.VirtAddress);
+		}
+
+		PML1* pml1 = _getPML1(pml4Idx, pml3Idx, pml2Idx);
+		{
+			PML2.TableEntry* pml2Entry = &pml2.entries[pml2Idx];
+			if (!pml2Entry.present)
+				return;
+
+			pml2Entry.user = true;
+			_flush(pml1.VirtAddress);
+		}
+
+		pml1.entries[pml1Idx].user = true;
+		_flush(vAddr);
 	}
 
 	@property bool isValid(VirtAddress vAddr) {
@@ -516,7 +560,6 @@ private:
 		PML3* pml3 = _getPML3(pml4Idx);
 		{
 			PML4.TableEntry* pml4Entry = &pml4.entries[pml4Idx];
-
 			if (!pml4Entry.present)
 				if (allocateWay)
 					_allocateTable(pml4Entry, pml3.VirtAddress); //TODO: Is it allowed to allocate a PML4 entry? Permissions!
@@ -532,7 +575,6 @@ private:
 					_allocateTable(pml3Entry, pml2.VirtAddress);
 				else
 					return null;
-
 		}
 
 		PML1* pml1 = _getPML1(pml4Idx, pml3Idx, pml2Idx);
@@ -553,6 +595,7 @@ private:
 		Params:
 			entry = The entry that should be allocated.
 			vAddr = The address the entry will have in ram.
+			user  = Make the table entry be accessable from userspace.
 	*/
 	void _allocateTable(T)(PTLevel!(T).TableEntry* entry, VirtAddress vAddr) if (!is(T == Page)) {
 		entry.present = true;
@@ -620,7 +663,7 @@ extern (C) void onPageFault(Registers* regs) @trusted {
 				pageFlags = pml1Entry.vmFlags;
 		}
 
-		ulong cr3 = cpuRetCR3();
+		auto cr3 = cpuRetCR3().VirtAddress;
 
 		/*VGA.color = CGASlotColor(CGAColor.red, CGAColor.black);
 		VGA.writeln("===> PAGE FAULT");
@@ -654,12 +697,12 @@ extern (C) void onPageFault(Registers* regs) @trusted {
 			"RCX = ", rcx, " | RDX = ", rdx, "\n",
 			"RDI = ", rdi, " | RSI = ", rsi, "\n",
 			"RSP = ", rsp, " | RBP = ", rbp, "\n",
-			" R8 = ", r8, "  |  R9 = ", r9, "\n",
+			" R8 = ", r8, " | R9 = ", r9, "\n",
 			"R10 = ", r10, " | R11 = ", r11, "\n",
 			"R12 = ", r12, " | R13 = ", r13, "\n",
 			"R14 = ", r14, " | R15 = ", r15, "\n",
-			" CS = ", cs, "  |  SS = ", ss, "\n",
-			" addr = ",	addr, " | CR3 = ", cr3, "\n",
+			" CS = ", cs, " | SS = ", ss, "\n",
+			"addr= ", addr, " | CR3 = ", cr3, "\n",
 			"Flags: ", flags, "\n",
 			"Errorcode: ", errorCode, " (",
 				(errorCode & (1 << 0) ? " Present" : " NotPresent"),

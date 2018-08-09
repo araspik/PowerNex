@@ -15,7 +15,7 @@ size_t write(StdFile fileID, string msg) {
 		mov RDI, fileID;
 		mov RSI, msgPtr;
 		mov RDX, msgLength;
-		syscall;
+		int 0x80; syscall;
 		mov ret, RAX;
 	}
 

@@ -61,18 +61,18 @@ public static:
 
 			while (true) {
 				*pixel = first;
-				asm @trusted nothrow @nogc {
+				/*asm @trusted nothrow @nogc {
 					mov RAX, 1; // yield
 					//syscall; /// Can't use syscall due to sysret sets CPL=3
 					int 0x80;
-				}
+				}*/
 
 				*pixel = second;
-				asm @trusted nothrow @nogc {
+				/*asm @trusted nothrow @nogc {
 					mov RAX, 1; // yield
 					//syscall;
 					int 0x80;
-				}
+				}*/
 			}
 		}
 
@@ -183,6 +183,7 @@ public static:
 			threadState.basePtr = threadState.stackPtr = taskStackPtr;
 			threadState.instructionPtr = VirtAddress(&cloneHelper);
 			threadState.paging = &newProcess.backend;
+			//Log.info("P[", newProcess, "] T[", newThread, "] threadState.paging = ", threadState.paging.VirtAddress);
 			stack = taskStack;
 			kernelTask = true;
 		}
@@ -253,11 +254,14 @@ private static:
 			if (cpuInfo.currentThread != cpuInfo.idleThread) {
 				cpuInfo.currentThread.state = VMThread.State.active;
 				cpuInfo.allThread.put(cpuInfo.currentThread);
+				Log.debug_("put: ", cpuInfo.currentThread);
 			}
 		}
 
 		{ // Loading
 			VMThread* newThread = cpuInfo.currentThread = cpuInfo.allThread.length ? cpuInfo.allThread.removeAndGet(0) : cpuInfo.idleThread;
+			Log.debug_("got: ", cpuInfo.currentThread);
+
 			newThread.state = VMThread.State.running;
 			newThread.timeSlotsLeft = newThread.niceFactor;
 
@@ -311,6 +315,7 @@ private static:
 			threadState.basePtr = threadState.stackPtr = taskStack.end;
 			threadState.instructionPtr = VirtAddress(&idle);
 			threadState.paging = &idleProcess.backend;
+			//Log.info("P[", idleProcess, "] T[", idleThread, "] threadState.paging = ", threadState.paging.VirtAddress);
 			stack = taskStack;
 			kernelTask = true;
 
@@ -334,7 +339,8 @@ private static:
 			process = kernelProcess;
 			cpuAssigned = 0;
 			state = VMThread.State.running;
-			threadState.paging = getKernelPaging();
+			threadState.paging = &kernelProcess.backend;
+			//Log.info("P[", kernelProcess, "] T[", kernelThread, "] threadState.paging = ", threadState.paging.VirtAddress);
 			stack = currentStack;
 			kernelTask = false;
 		}

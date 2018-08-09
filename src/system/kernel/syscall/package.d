@@ -5,6 +5,7 @@ import stl.arch.amd64.msr;
 import stl.register;
 import stl.trait;
 import stl.address;
+import stl.io.log;
 
 import arch.paging;
 
@@ -29,10 +30,15 @@ private struct SyscallStorage {
 
 static assert(0x1000 / SyscallStorage.sizeof >= maxCPUCount);
 
+
 struct SyscallHandler {
 public static:
 	void init(CPUInfo* cpuInfo) {
+		import stl.spinlock;
 		import stl.vmm.paging : VMPageFlags;
+
+		__gshared SpinLock mutex;
+		mutex.lock();
 
 		if (!_storage) {
 			VirtAddress vAddr = makeAddress(510, 510, 510, 0);
@@ -48,6 +54,11 @@ public static:
 		MSR.sfMask = _eflagsInterrupt;
 
 		IDT.register(0x80, cast(IDT.InterruptCallback)&_onSyscallHandler);
+
+		import stl.arch.amd64.lapic : LAPIC;
+
+		Log.debug_("SyscallHandler is setup for ", LAPIC.getCurrentID);
+		mutex.unlock();
 	}
 
 	void setKernelStack(CPUInfo* cpuInfo) {
@@ -74,7 +85,9 @@ private static:
 
 		asm @trusted nothrow @nogc {
 			naked;
-
+			//sysretq;
+			db 0x48, 0x0F, 0x07;
+			/+
 			/// -8[userStack] == Real RAX
 			mov - 8[RSP], RAX;
 
@@ -89,6 +102,8 @@ private static:
 			mov RAX, userStack;
 			// push userStack
 			push[RAX]; /// *userStack
++/
+			push RSP;
 
 			push _userCS + 8; // SS
 			push[RAX]; // RSP
@@ -119,7 +134,7 @@ private static:
 			push R15;
 
 			mov RDI, RSP;
-			call _onSyscallHandler;
+			//call _onSyscallHandler;
 			jmp _returnFromSyscall;
 		}
 	}
@@ -154,9 +169,43 @@ private static:
 	void _onSyscallHandler(Registers* regs) {
 		import syscall.action;
 		import stl.io.vga;
+		import stl.arch.amd64.lapic : LAPIC;
+		import stl.text : HexInt;
 
 		VMThread* thread = Scheduler.getCurrentThread();
+
+		if (regs.rip < 0x10_400000) {
+			size_t cpuID; // = LAPIC.getCurrentID();
+
+			Log.info("Regs: ", regs);
+
+			// dfmt off
+		with (regs)
+			Log.info("===> onSyscallHandler (CPU ", cpuID, ")", "\n",
+				"IRQ = ", intNumber.num!InterruptType, " (", intNumber.HexInt, ") | RIP = ", rip, "\n",
+				"RAX = ", rax, " | RBX = ", rbx, "\n",
+				"RCX = ", rcx, " | RDX = ", rdx, "\n",
+				"RDI = ", rdi, " | RSI = ", rsi, "\n",
+				"RSP = ", rsp, " | RBP = ", rbp, "\n",
+				" R8 = ", r8,  " |  R9 = ", r9, "\n",
+				"R10 = ", r10, " | R11 = ", r11, "\n",
+				"R12 = ", r12, " | R13 = ", r13, "\n",
+				"R14 = ", r14, " | R15 = ", r15, "\n",
+				" CS = ", cs,  " |  SS = ", ss, "\n",
+				"CR0 = ",	cr0," | CR2 = ", cr2, "\n",
+				"CR3 = ",	cr3, " | CR4 = ", cr4, "\n",
+				"Flags = ", flags.num.HexInt, " | Errorcode = ", errorCode.num.HexInt);
+		// dfmt on
+
+			__gshared int a;
+			if (++a == 2) {
+				while (true) {
+				}
+			}
+		}
 		thread.syscallRegisters = *regs;
+
+		regs.rax &= 0xFF;
 
 		with (regs)
 	outer : switch (rax) {
@@ -173,7 +222,8 @@ private static:
 				}
 		default:
 			VGA.writeln("UNKNOWN SYSCALL: ", rax);
-			Log.debug_("UNKNOWN SYSCALL: ", rax);
+			Log.error("UNKNOWN SYSCALL: ", rax);
+			Log.printStackTrace(rbp);
 			thread.syscallRegisters.rax = ulong.max.VirtAddress;
 			break;
 		}
@@ -194,8 +244,7 @@ private template _generateFunctionCall(alias func) {
 			enum gen = "";
 		else static if (is(Unqual!(Args[0].Argument) : E[], E)) {
 			static if (count + 1 < ABI.length)
-				enum gen = prefix ~ ABI[count] ~ ".array!(" ~ E.stringof ~ ")(" ~ ABI[count + 1] ~ ")" ~ gen!(count + 2,
-							Args[1 .. $]);
+				enum gen = prefix ~ ABI[count] ~ ".array!(" ~ E.stringof ~ ")(" ~ ABI[count + 1] ~ ")" ~ gen!(count + 2, Args[1 .. $]);
 			else
 				static assert(0, "Function " ~ func.stringof ~ " requires too many arguments!");
 		} else {
