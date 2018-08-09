@@ -90,12 +90,20 @@ import powerd.api.cpu : CPUThread;
 
 CPUThread* currentThread; /// The current threads structure
 
-ELFInstance instantiateELF(ref ELF64 elf) @safe {
+///
+@safe struct KernelELFInstance {
+	import powerd.api : PowerDAPI;
+
+	size_t function(PowerDAPI * powerDAPI) @system main;
+	size_t function() @system[] ctors;
+}
+
+KernelELFInstance instantiateELF(ref ELF64 elf) @safe {
 	import stl.io.log : Log;
 	import stl.vmm.frameallocator : FrameAllocator;
 	import arch.amd64.paging : Paging, VMPageFlags;
 
-	ELFInstance instance;
+	KernelELFInstance instance;
 	instance.main = () @trusted{ return cast(typeof(instance.main))elf.header.entry.ptr; }();
 
 	foreach (ref ELF64ProgramHeader hdr; elf.programHeaders) {
@@ -163,7 +171,6 @@ extern (C) ulong main() @safe {
 	import arch.amd64.pic : PIC;
 	import arch.amd64.pit : PIT;
 	import arch.amd64.smp : SMP;
-	import stl.elf64 : ELF64, ELFInstance;
 	import data.multiboot2 : Multiboot2;
 	import data.tls : TLS;
 	import stl.arch.amd64.com : COM;
@@ -233,7 +240,7 @@ extern (C) ulong main() @safe {
 	*kELF = ELF64(kernelModule.toVirtual);
 	if (!kELF.isValid)
 		Log.fatal("Kernel ELF is not valid!");
-	ELFInstance kernel = instantiateELF(*kELF);
+	KernelELFInstance kernel = instantiateELF(*kELF);
 
 	outputBoth("kernel.main: ", VirtAddress(kernel.main));
 	outputBoth("kernel.ctors: ");

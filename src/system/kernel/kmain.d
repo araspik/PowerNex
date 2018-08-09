@@ -80,16 +80,16 @@ extern (C) void kmain(PowerDAPI* papi) {
 
 	Scheduler.isEnabled = true;
 
-	size_t counter;
+	/*size_t counter;
 	while (true) {
 		VGA.writeln("counter: ", counter++);
 		asm @trusted nothrow @nogc {
 			// pause;
 			db 0xf3, 0x90;
 		}
-	}
+	}*/
 
-	string initFile = "/bin/init";
+	string initFile = "/binaries/init";
 	TarFSNode* initNode = cast(TarFSNode*)initrdFS.findNode(initFile);
 	if (!initNode)
 		Log.fatal("'", initFile, "' is missing, boot halted!");
@@ -98,10 +98,11 @@ extern (C) void kmain(PowerDAPI* papi) {
 		import stl.elf64;
 
 		ELF64 init = ELF64(VirtMemoryRange.fromArray(initNode.data));
-		*VirtAddress(0).ptr!size_t = 0x1337;
 
 		if (!init.isValid)
 			Log.fatal("'", initFile, "' is not a ELF, boot halted!");
+
+		*VirtAddress(0x137).ptr!size_t = 0x1337;
 	}
 
 	VGA.color = CGASlotColor(CGAColor.red, CGAColor.yellow);

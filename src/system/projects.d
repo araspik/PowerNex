@@ -1,4 +1,4 @@
-module src.system.project;
+module src.system.projects;
 
 void setupProject() {
 	initSTL();
@@ -171,6 +171,7 @@ void initKernel() {
 			"syscall/action/package.d",
 			"syscall/action/exit.d",
 			"syscall/action/yield.d",
+			"syscall/action/write.d",
 			"syscall/package.d",
 			"task/scheduler.d",
 			"task/thread.d",

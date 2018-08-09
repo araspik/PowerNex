@@ -165,7 +165,7 @@ private static:
 					static foreach (attr; __traits(getAttributes, mixin(func))) {
 						static if (is(typeof(attr) == Syscall)) {
 		case attr.id:
-							pragma(msg, "_generateFunctionCall!", func, " == ", _generateFunctionCall!func);
+							//pragma(msg, "_generateFunctionCall!", func, " == ", _generateFunctionCall!func);
 							mixin(_generateFunctionCall!("syscall.action." ~ module_ ~ "." ~ func));
 							break outer;
 						}
@@ -192,9 +192,9 @@ private template _generateFunctionCall(alias func) {
 
 		static if (Args.length == 0)
 			enum gen = "";
-		else static if (isArray!(Args[0].Argument)) {
+		else static if (is(Unqual!(Args[0].Argument) : E[], E)) {
 			static if (count + 1 < ABI.length)
-				enum gen = prefix ~ ABI[count] ~ ".array!(" ~ Args[0].ArgumentString[0 .. $ - 2] ~ ")(" ~ ABI[count + 1] ~ ")" ~ gen!(count + 2,
+				enum gen = prefix ~ ABI[count] ~ ".array!(" ~ E.stringof ~ ")(" ~ ABI[count + 1] ~ ")" ~ gen!(count + 2,
 							Args[1 .. $]);
 			else
 				static assert(0, "Function " ~ func.stringof ~ " requires too many arguments!");
